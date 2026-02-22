@@ -609,14 +609,46 @@ function updateExistingFlatConfig(
   // Find the exported array - support different export patterns
   let exportedArray = null
 
+  const findArray = (path: any) => {
+    let node = path.value
+    // Unwrap TSAsExpression (e.g., [] as const)
+    if (node.type === 'TSAsExpression') {
+      path = path.get('expression')
+      node = path.value
+    }
+    // Handle direct ArrayExpression
+    if (node.type === 'ArrayExpression') {
+      return path
+    }
+    // Handle CallExpression (e.g., defineConfig([]))
+    if (node.type === 'CallExpression') {
+      if (
+        node.arguments.length > 0 &&
+        node.arguments[0].type === 'ArrayExpression'
+      ) {
+        return path.get('arguments', 0)
+      }
+      // Handle CallExpression with TSAsExpression argument
+      if (
+        node.arguments.length > 0 &&
+        node.arguments[0].type === 'TSAsExpression' &&
+        node.arguments[0].expression.type === 'ArrayExpression'
+      ) {
+        return path.get('arguments', 0).get('expression')
+      }
+    }
+    return null
+  }
+
   // Pattern 1: export default [...]
-  const directArrayExports = root.find(j.ExportDefaultDeclaration, {
-    declaration: { type: 'ArrayExpression' },
+  root.find(j.ExportDefaultDeclaration).forEach((path) => {
+    const array = findArray(path.get('declaration'))
+    if (array) {
+      exportedArray = array
+    }
   })
 
-  if (directArrayExports.size() > 0) {
-    exportedArray = directArrayExports.at(0).get('declaration')
-  } else {
+  if (!exportedArray) {
     // Pattern 2: const config = [...]; export default config
     const defaultExportIdentifier = root.find(j.ExportDefaultDeclaration, {
       declaration: { type: 'Identifier' },
@@ -626,36 +658,12 @@ function updateExistingFlatConfig(
       const declarationNode = defaultExportIdentifier.at(0).get('declaration')
       if (declarationNode.value) {
         const varName = declarationNode.value.name
-        const varDeclaration = root.find(j.VariableDeclarator, {
-          id: { name: varName },
-          init: { type: 'ArrayExpression' },
-        })
-
-        if (varDeclaration.size() > 0) {
-          exportedArray = varDeclaration.at(0).get('init')
-        } else {
-          // Pattern 3: defineConfig([...]) or similar wrapper function
-          const callDeclaration = root.find(j.VariableDeclarator, {
-            id: { name: varName },
-            init: { type: 'CallExpression' },
-          })
-
-          if (callDeclaration.size() > 0) {
-            const callExpression = callDeclaration.at(0).get('init')
-            if (
-              callExpression.value.arguments.length > 0 &&
-              callExpression.value.arguments[0].type === 'ArrayExpression'
-            ) {
-              exportedArray = callExpression.get('arguments', 0)
-            } else {
-              console.warn(
-                prefixes.warn,
-                '   Wrapper function does not have an array parameter. Manual migration required.'
-              )
-              return false
-            }
+        root.find(j.VariableDeclarator, { id: { name: varName } }).forEach((path) => {
+          const array = findArray(path.get('init'))
+          if (array) {
+            exportedArray = array
           }
-        }
+        })
       }
     }
   }

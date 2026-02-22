@@ -660,7 +660,11 @@ export async function handleAction({
         )
       }
 
-      const error = new Error('Invalid Server Actions request.')
+      const error = new Error(
+        `Invalid Server Actions request. The \`origin\` header (${originDomain}) does not match the \`host\` header (${
+          host?.value ?? 'unknown'
+        }). Read more: https://nextjs.org/docs/app/api-reference/functions/server-actions#security`
+      )
 
       if (isFetchAction) {
         res.statusCode = 500

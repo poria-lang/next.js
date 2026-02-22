@@ -5,63 +5,60 @@ export default function transformer(file: FileInfo, _api: API) {
   const j = createParserFromPath(file.path)
   const root = j(file.source)
 
-  // Find the metadata export
-  const metadataExport = root.find(j.ExportNamedDeclaration, {
-    declaration: {
-      type: 'VariableDeclaration',
-      declarations: [
-        {
-          id: { name: 'metadata' },
-        },
-      ],
-    },
+  // Find the metadata object
+  let metadataObjectPath: any
+  root.find(j.VariableDeclarator, { id: { name: 'metadata' } }).forEach((path) => {
+    if (path.value.init && path.value.init.type === 'ObjectExpression') {
+      metadataObjectPath = path.get('init')
+    }
   })
 
-  if (metadataExport.size() !== 1) {
+  if (!metadataObjectPath) {
     return file.source
   }
 
-  const metadataObject = metadataExport.find(j.ObjectExpression).get(0).node
-  if (!metadataObject) {
-    console.error('Could not find metadata object')
-    return file.source
-  }
-
+  const metadataObject = metadataObjectPath.node
   let metadataProperties = metadataObject.properties
-  let viewportProperties
+  let viewportProperties: any[] = []
   let hasChanges = false
 
-  const viewport = metadataProperties.find(
-    (prop) => prop.key.name === 'viewport'
-  )
-  if (viewport) {
-    viewportProperties = viewport.value.properties
-    metadataProperties = metadataProperties.filter(
-      (prop) => prop.key.name !== 'viewport'
-    )
-    hasChanges = true
-  } else {
-    viewportProperties = []
+  const getPropKeyName = (prop: any) => {
+    if (!prop.key) return null
+    if (prop.key.type === 'Identifier') return prop.key.name
+    if (prop.key.type === 'Literal' || prop.key.type === 'StringLiteral')
+      return prop.key.value
+    return null
   }
 
-  const colorScheme = metadataProperties.find(
-    (prop) => prop.key.name === 'colorScheme'
+  const viewportProp = metadataProperties.find(
+    (prop: any) => getPropKeyName(prop) === 'viewport'
   )
-  if (colorScheme) {
-    viewportProperties.push(colorScheme)
+  if (viewportProp && viewportProp.type === 'ObjectProperty' && viewportProp.value.type === 'ObjectExpression') {
+    viewportProperties = viewportProp.value.properties
     metadataProperties = metadataProperties.filter(
-      (prop) => prop.key.name !== 'colorScheme'
+      (prop) => getPropKeyName(prop) !== 'viewport'
     )
     hasChanges = true
   }
 
-  const themeColor = metadataProperties.find(
-    (prop) => prop.key.name === 'themeColor'
+  const colorSchemeProp = metadataProperties.find(
+    (prop: any) => getPropKeyName(prop) === 'colorScheme'
   )
-  if (themeColor) {
-    viewportProperties.push(themeColor)
+  if (colorSchemeProp) {
+    viewportProperties.push(colorSchemeProp)
     metadataProperties = metadataProperties.filter(
-      (prop) => prop.key.name !== 'themeColor'
+      (prop) => getPropKeyName(prop) !== 'colorScheme'
+    )
+    hasChanges = true
+  }
+
+  const themeColorProp = metadataProperties.find(
+    (prop: any) => getPropKeyName(prop) === 'themeColor'
+  )
+  if (themeColorProp) {
+    viewportProperties.push(themeColorProp)
+    metadataProperties = metadataProperties.filter(
+      (prop) => getPropKeyName(prop) !== 'themeColor'
     )
     hasChanges = true
   }
@@ -71,10 +68,8 @@ export default function transformer(file: FileInfo, _api: API) {
     return file.source
   }
 
-  // Update the metadata export
-  metadataExport
-    .find(j.ObjectExpression)
-    .replaceWith(j.objectExpression(metadataProperties))
+  // Update the metadata object
+  j(metadataObjectPath).replaceWith(j.objectExpression(metadataProperties))
 
   // Create the new viewport object
   const viewportExport = j.exportNamedDeclaration(

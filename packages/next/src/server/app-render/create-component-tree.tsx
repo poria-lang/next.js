@@ -781,25 +781,22 @@ async function createComponentTreeInternal(
           Component: PageComponent,
           serverProvidedParams: null,
         })
-      } else if (isStaticGeneration) {
+      } else {
         const promiseOfParams =
           createPrerenderParamsForClientSegment(currentParams)
-        const promiseOfSearchParams = createPrerenderSearchParamsForClientPage()
+        const promiseOfSearchParams = isStaticGeneration
+          ? createPrerenderSearchParamsForClientPage()
+          : createServerSearchParamsForServerPage(
+              query,
+              varyParamsAccumulator,
+              isRuntimePrefetchable
+            )
+
         pageElement = createElement(ClientPageRoot, {
           Component: PageComponent,
           serverProvidedParams: {
-            searchParams: query,
-            params: currentParams,
-            promises: [promiseOfSearchParams, promiseOfParams],
-          },
-        })
-      } else {
-        pageElement = createElement(ClientPageRoot, {
-          Component: PageComponent,
-          serverProvidedParams: {
-            searchParams: query,
-            params: currentParams,
-            promises: null,
+            searchParams: promiseOfSearchParams,
+            params: promiseOfParams,
           },
         })
       }
@@ -892,7 +889,7 @@ async function createComponentTreeInternal(
           slots: parallelRouteProps,
           serverProvidedParams: null,
         })
-      } else if (isStaticGeneration) {
+      } else {
         const promiseOfParams =
           createPrerenderParamsForClientSegment(currentParams)
 
@@ -900,17 +897,7 @@ async function createComponentTreeInternal(
           Component: SegmentComponent,
           slots: parallelRouteProps,
           serverProvidedParams: {
-            params: currentParams,
-            promises: [promiseOfParams],
-          },
-        })
-      } else {
-        clientSegment = createElement(ClientSegmentRoot, {
-          Component: SegmentComponent,
-          slots: parallelRouteProps,
-          serverProvidedParams: {
-            params: currentParams,
-            promises: null,
+            params: promiseOfParams,
           },
         })
       }
@@ -1124,7 +1111,9 @@ function createErrorBoundaryClientSegmentRoot({
       createElement(ClientSegmentRoot, {
         Component: SegmentComponent,
         slots: notFoundParallelRouteProps,
-        params: currentParams,
+        serverProvidedParams: {
+          params: currentParams,
+        },
       })
     )
   }

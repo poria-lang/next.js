@@ -20,31 +20,42 @@ export function ClientSegmentRoot({
   Component: React.ComponentType<any>
   slots: { [key: string]: React.ReactNode }
   serverProvidedParams: null | {
-    params: Params
-    promises: Array<Promise<any>> | null
+    params: Params | Promise<Params>
   }
 }) {
-  let params: Params
+  let paramsPromise: Promise<Params>
   if (serverProvidedParams !== null) {
-    params = serverProvidedParams.params
+    const { params } = serverProvidedParams
+    if (typeof window === 'undefined') {
+      const { createParamsFromClient } =
+        require('../../server/request/params') as typeof import('../../server/request/params')
+      paramsPromise =
+        params instanceof Promise ? params : createParamsFromClient(params)
+    } else {
+      const { createRenderParamsFromClient } =
+        require('../request/params.browser') as typeof import('../request/params.browser')
+      paramsPromise =
+        params instanceof Promise
+          ? params
+          : createRenderParamsFromClient(params as Params)
+    }
   } else {
     // When Cache Components is enabled, the server does not pass the params
     // as props; they are parsed on the client and passed via context.
     const layoutRouterContext = use(LayoutRouterContext)
-    params =
+    const params =
       layoutRouterContext !== null ? layoutRouterContext.parentParams : {}
+
+    if (typeof window === 'undefined') {
+      const { createParamsFromClient } =
+        require('../../server/request/params') as typeof import('../../server/request/params')
+      paramsPromise = createParamsFromClient(params)
+    } else {
+      const { createRenderParamsFromClient } =
+        require('../request/params.browser') as typeof import('../request/params.browser')
+      paramsPromise = createRenderParamsFromClient(params)
+    }
   }
 
-  if (typeof window === 'undefined') {
-    const { createParamsFromClient } =
-      require('../../server/request/params') as typeof import('../../server/request/params')
-    const clientParams: Promise<Params> = createParamsFromClient(params)
-
-    return <Component {...slots} params={clientParams} />
-  } else {
-    const { createRenderParamsFromClient } =
-      require('../request/params.browser') as typeof import('../request/params.browser')
-    const clientParams = createRenderParamsFromClient(params)
-    return <Component {...slots} params={clientParams} />
-  }
+  return <Component {...slots} params={paramsPromise} />
 }

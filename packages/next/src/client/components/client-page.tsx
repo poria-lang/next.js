@@ -21,21 +21,46 @@ export function ClientPageRoot({
 }: {
   Component: React.ComponentType<any>
   serverProvidedParams: null | {
-    searchParams: ParsedUrlQuery
-    params: Params
-    promises: Array<Promise<any>> | null
+    searchParams: ParsedUrlQuery | Promise<ParsedUrlQuery>
+    params: Params | Promise<Params>
   }
 }) {
-  let searchParams: ParsedUrlQuery
-  let params: Params
+  let searchParamsPromise: Promise<ParsedUrlQuery>
+  let paramsPromise: Promise<Params>
   if (serverProvidedParams !== null) {
-    searchParams = serverProvidedParams.searchParams
-    params = serverProvidedParams.params
+    const { searchParams, params } = serverProvidedParams
+    if (typeof window === 'undefined') {
+      const { createSearchParamsFromClient } =
+        require('../../server/request/search-params') as typeof import('../../server/request/search-params')
+      const { createParamsFromClient } =
+        require('../../server/request/params') as typeof import('../../server/request/params')
+
+      searchParamsPromise =
+        searchParams instanceof Promise
+          ? searchParams
+          : createSearchParamsFromClient(searchParams)
+      paramsPromise =
+        params instanceof Promise ? params : createParamsFromClient(params)
+    } else {
+      const { createRenderSearchParamsFromClient } =
+        require('../request/search-params.browser') as typeof import('../request/search-params.browser')
+      const { createRenderParamsFromClient } =
+        require('../request/params.browser') as typeof import('../request/params.browser')
+
+      searchParamsPromise =
+        searchParams instanceof Promise
+          ? searchParams
+          : createRenderSearchParamsFromClient(searchParams as ParsedUrlQuery)
+      paramsPromise =
+        params instanceof Promise
+          ? params
+          : createRenderParamsFromClient(params as Params)
+    }
   } else {
     // When Cache Components is enabled, the server does not pass the params as
     // props; they are parsed on the client and passed via context.
     const layoutRouterContext = use(LayoutRouterContext)
-    params =
+    const params =
       layoutRouterContext !== null ? layoutRouterContext.parentParams : {}
 
     // This is an intentional behavior change: when Cache Components is enabled,
@@ -43,30 +68,30 @@ export function ClientPageRoot({
     // rewritten ones. Users should either call useSearchParams directly or pass
     // the rewritten ones in from a Server Component.
     // TODO: Log a deprecation error when this object is accessed
-    searchParams = urlSearchParamsToParsedUrlQuery(use(SearchParamsContext)!)
+    const searchParams = urlSearchParamsToParsedUrlQuery(
+      use(SearchParamsContext)!
+    )
+
+    if (typeof window === 'undefined') {
+      const { createSearchParamsFromClient } =
+        require('../../server/request/search-params') as typeof import('../../server/request/search-params')
+      const { createParamsFromClient } =
+        require('../../server/request/params') as typeof import('../../server/request/params')
+
+      searchParamsPromise = createSearchParamsFromClient(searchParams)
+      paramsPromise = createParamsFromClient(params)
+    } else {
+      const { createRenderSearchParamsFromClient } =
+        require('../request/search-params.browser') as typeof import('../request/search-params.browser')
+      const { createRenderParamsFromClient } =
+        require('../request/params.browser') as typeof import('../request/params.browser')
+
+      searchParamsPromise = createRenderSearchParamsFromClient(searchParams)
+      paramsPromise = createRenderParamsFromClient(params)
+    }
   }
 
-  if (typeof window === 'undefined') {
-    let clientSearchParams: Promise<ParsedUrlQuery>
-    let clientParams: Promise<Params>
-
-    const { createSearchParamsFromClient } =
-      require('../../server/request/search-params') as typeof import('../../server/request/search-params')
-    clientSearchParams = createSearchParamsFromClient(searchParams)
-
-    const { createParamsFromClient } =
-      require('../../server/request/params') as typeof import('../../server/request/params')
-    clientParams = createParamsFromClient(params)
-
-    return <Component params={clientParams} searchParams={clientSearchParams} />
-  } else {
-    const { createRenderSearchParamsFromClient } =
-      require('../request/search-params.browser') as typeof import('../request/search-params.browser')
-    const clientSearchParams = createRenderSearchParamsFromClient(searchParams)
-    const { createRenderParamsFromClient } =
-      require('../request/params.browser') as typeof import('../request/params.browser')
-    const clientParams = createRenderParamsFromClient(params)
-
-    return <Component params={clientParams} searchParams={clientSearchParams} />
-  }
+  return (
+    <Component params={paramsPromise} searchParams={searchParamsPromise} />
+  )
 }
